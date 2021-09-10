@@ -9,9 +9,33 @@
     <link rel="stylesheet" type="text/css" href="style.css">
   </head>
   <body id="body">
-    <label><input type="checkbox" id="check1">夕食</label>
-    <label><input type="checkbox" id="check2">朝食</label>
-    <input type="button" value="Calc" id="calcButton">
+    <div>
+      <div id="filter">
+        <label><input type="checkbox" id="grass" >芝</label>
+        <label><input type="checkbox" id="dirt" >ダート</label>
+        <label><input type="checkbox" id="short" >短距離</label>
+        <label><input type="checkbox" id="mile" >マイル</label>
+        <label><input type="checkbox" id="mid" >中距離</label>
+        <label><input type="checkbox" id="long" >長距離</label>
+        <label><input type="checkbox" id="nige" >逃げ</label>
+        <label><input type="checkbox" id="senkou" >先行</label>
+        <label><input type="checkbox" id="sashi" >差し</label>
+        <label><input type="checkbox" id="oikomi" >追込</label>
+      </div>
+      <div>
+        <label><input type="checkbox" id="remove_negative_skill" checked>マイナススキルを除外</label>
+        <label><input type="checkbox" id="remove_unique_skill" checked>固有スキルを除外</label>
+        <label><input type="checkbox" id="remove_inherited_skill" checked>継承スキルを除外</label>
+        <label><input type="checkbox" id="remove_acceleration_skill" checked>加速スキルを除外</label>
+        <label><input type="checkbox" id="stndev_on" checked>指数の偏差値化</label>
+      </div>
+    </div>
+    <input type="button" value="再計算" id="calcButton">
+    <input type="button" value="クリア" id="clearButton">
+    
+    <table id="table">
+
+    </table>
     <script src="test.js"></script>
   </body>
 </html>

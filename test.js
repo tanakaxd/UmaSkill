@@ -6,17 +6,46 @@
 //脚質距離限定スキルの査定値補正
 
 //オプション　脚質距離補正を含めるかどうか。ヒントレベル。よく使うスキル。サポカからの入手できるスキル。
-// 表示する列の選択
+// 表示する列の選択。スキル差分を作るかどうか。ソート方法。
 // レコードに表示するかどうか、ヒントレベルの切り替えという項目を作る
 
-const table = [];
+//TODO debug トリック後
 
-window.onload = () => {
+const table = [];//ロード時に作成し、これ自体はそれ以後改変しない。
+const promises = [];
 
-    loadData("skill_effectiveness.json");
+window.onload = onLoad;
 
-    const promises = [];
-    
+const table_dom = document.getElementById("table");
+
+const filter_dom = document.getElementById("filter");
+
+const calcButton = document.getElementById('calcButton');
+calcButton.addEventListener('click', () => {
+    makeTable(table, "body",["ID","スキル名","取得pt(コツ0)","査定値","持続時間補正値","補正値"]);
+});
+const clearButton = document.getElementById('clearButton');
+clearButton.addEventListener('click', () => {
+    while (table_dom.firstChild) table_dom.removeChild(table_dom.firstChild);
+});
+const remove_negative_skill = document.getElementById('remove_negative_skill');
+const remove_unique_skill = document.getElementById('remove_unique_skill');
+const remove_inherited_skill = document.getElementById('remove_inherited_skill');
+const remove_acceleration_skill = document.getElementById('remove_acceleration_skill');
+// const checkButton = document.getElementById('');
+// const checkButton = document.getElementById('');
+
+
+
+function getOptions() {
+    return {
+        "remove_negative_skill": remove_negative_skill.checked,
+        "remove_unique_skill": remove_unique_skill.checked,
+        "remove_inherited_skill":remove_inherited_skill.checked,
+    };
+}
+
+function onLoad() {
     promises.push(loadData("skill_effectiveness.json"));
     promises.push(loadData("skill_pt_hint.json"));
 
@@ -44,7 +73,6 @@ window.onload = () => {
             });
         })
         .then(() => {
-            console.log(table);
             //上位スキルのPT修正
             for (let index = 0; index < table.length; index++) {
                 const record = table[index];
@@ -53,8 +81,9 @@ window.onload = () => {
                     //TODO スキル差分を作る    
                 }
             }
+            // console.log(table);
 
-            makeTable(table, "body",["ID","スキル名","取得pt(コツ0)","査定値","持続時間補正値","補正値"]);
+            makeTable(table, "body",["ID","スキル名","取得pt(コツ0)","査定値","持続時間補正値","補正値"],"ID");
         })
         .catch(err => { console.log(err) });
 }
@@ -66,13 +95,18 @@ async function loadData(url) {
 }
 
 // 表の動的作成
-function makeTable(table_data, tableId, cols_name){
+function makeTable(table_data, table_parent_Id, cols_name,sort_col) {
+
+    console.log(table_data);
+    while (table_dom.firstChild) table_dom.removeChild(table_dom.firstChild)
+    
+    const options = getOptions();
+
+
     const rows = [];
-    const table_dom = document.createElement("table");
+    // const table_dom = document.createElement("table");
+    // table_dom.id = "table";
     const retreived_table = [];
-
-
-
 
     //必要列の抽出
     table_data.forEach((record) => {
@@ -80,26 +114,74 @@ function makeTable(table_data, tableId, cols_name){
         cols_name.forEach((key) => {
             row[key] = record[key];
         });
- 
-        //計算列の追加
-        const temp = record["査定値"] / record["取得pt(コツ0)"];
-        row["査定効率指数"] = Math.round(temp * 100) / 100;//TODO ◎スキルの仕様
-        const score = record["査定値(上位スキル単独査定)"] == "-" ? 500 : record["スキル名"].endsWith("◎") ? 500 : 1200;
-        row["チムレスコア効率指数"] = Math.round(score / record["取得pt(コツ0)"] * 100) / 100 ;
-        const effectiveness = record["種類"] == "目標速度アップ"?record["補正値"] * record["持続時間補正値"]/ 10000/10000 :NaN;
-        row["効果量(m)"] = effectiveness;
-        row["効果量効率指数"] = Math.round(effectiveness/record["取得pt(コツ0)"] * 10000) ;
 
+        row["スキル説明"] = record["スキル説明"];
+ 
+        if (row["スキル説明"].includes("＞")) {
+            row["査定値"] = Math.floor(row["査定値"]*1.1);
+        }
+        
+        // TODO ヒントレベルや適正によって変わる値
+        //計算列の追加
+        const temp = row["査定値"] / row["取得pt(コツ0)"];
+        row["査定効率指数"] = Math.round(temp * 100) / 100;//TODO ◎スキルの仕様
+
+        //TODO 簡易的表現
+        const ratio = [10, 20, 30, 35, 40];
+        for (let i = 0; i < ratio.length; i++) {
+            row["Lv" + (i + 1)] = Math.round(row["査定効率指数"] * 100 / (100 - ratio[i]) * 100) / 100;
+        }
+
+
+
+        const score = record["査定値(上位スキル単独査定)"] == "-" ? 500 : row["スキル名"].endsWith("◎") ? 500 : 1200;
+        row["チムレスコア効率指数"] = Math.round(score / row["取得pt(コツ0)"] * 100) / 100 ;
+        const effectiveness = record["種類"] == "目標速度アップ"?row["補正値"] * row["持続時間補正値"]/ 10000/10000 :NaN;
+        row["効果量(m)"] = effectiveness;
+        row["効果量効率指数"] = Math.round(effectiveness/row["取得pt(コツ0)"] * 10000) ;
+        
         retreived_table.push(row);
     });
 
+    console.log(retreived_table);
+
+
+    //filter, 固有スキルの除外,マイナススキルの除外
+    //TODO 移動可能
+    if (options["remove_negative_skill"]) {
+        retreived_table.removeIf((elem,index) => 
+            elem["査定値"] < 0
+        )
+    }
+
+    if (options["remove_unique_skill"]) {
+        retreived_table.removeIf((elem,index) => {
+            return elem["取得pt(コツ0)"]=="固有";
+        })
+    }
+
+    console.log(retreived_table);
+
+
+    Array.from(filter_dom.children).removeIf((child) => {
+        return child.firstChild.checked;
+    })
+    .forEach((child) => {
+        retreived_table.removeIf((elem, index) => 
+            elem["スキル説明"].includes(child.textContent)
+        );
+    });
+
+    console.log(retreived_table);
+
+    
 
     //並べ替え
     // console.log(retreived_table[1]["チムレスコア効率指数"]);
-    sortOnCol(retreived_table, "査定効率指数",false);
+    // sortOnCol(retreived_table, "査定効率指数",false);
     // sortOnCol(retreived_table, "チムレスコア効率指数",false);
     // sortOnCol(retreived_table, "効果量効率指数",false);
-    // sortOnCol(retreived_table, "効果量(m)",false);
+    sortOnCol(retreived_table, sort_col,false,true);
 
     // retreived_table.sort((a, b) => a["ID"] - b["ID"]);
     // console.log(retreived_table.sort((a, b) => a["チムレスコア効率指数"] - b["チムレスコア効率指数"]));
@@ -111,12 +193,19 @@ function makeTable(table_data, tableId, cols_name){
     Object.keys(retreived_table[0]).forEach((col_label) => { //TODO index0の行が欠けていた場合バグ
         const cell = rows[0].insertCell(-1);
         cell.appendChild(document.createTextNode(col_label));
-        cell.style.backgroundColor = "#bbb"; 
+        cell.style.backgroundColor = "#bbb";
+        cell.addEventListener("click", (e) => {
+            console.log(e);
+            console.log(e.path[0].innerText);
+            // sortOnCol(retreived_table, e.path[0].innerText, false, true);
+            makeTable(table, "body",["ID","スキル名","取得pt(コツ0)","査定値","持続時間補正値","補正値"],e.path[0].innerText);
+            
+        });
     });
 
 
     for(i = 0; i < retreived_table.length; i++){
-        rows.push(table_dom.insertRow(-1));  // 行の追加
+        rows.push(table_dom.insertRow(-1));  // 行の追加。追加した行に対して列を追加できるようにrows配列いれておく
 
         Object.keys(retreived_table[i]).forEach((key) => {
             const cell = rows[i+1].insertCell(-1);
@@ -125,19 +214,39 @@ function makeTable(table_data, tableId, cols_name){
         });
     }
     // 指定したdiv要素に表を加える
-    document.getElementById(tableId).appendChild(table_dom);
+    // document.getElementById(table_parent_Id).appendChild(table_dom);
 }
 
-function sortOnCol(table, col_label, ascending) {//数字しかソートできない
-    table.removeIf(x => Number.isNaN(x[col_label]));
-    table.sort((a, b) => ascending? a[col_label] - b[col_label]:b[col_label] - a[col_label]);
+function sortOnCol(table, col_label, ascending, include_NaN) {//数字しかソートできない
+    // table.removeIf(x => Number.isNaN(x[col_label]));
+    console.log(table);
+
+    const temp = table.popIf(x => Number.isNaN(x[col_label]));
+    console.log(temp);
+    table.sort((a, b) => ascending ? a[col_label] - b[col_label] : b[col_label] - a[col_label]);
+    if (include_NaN) {
+        Array.prototype.push.apply(table, temp);
+    }
+    console.log(table);
 }
 
 Array.prototype.removeIf = function(callback) {
     var i = this.length;
     while (i--) {
-        if (callback(this[i])) {//callback(this[i], i)となっていたが、おそらくpredicateにindex情報も渡せるような設計
+        if (callback(this[i],i)) {//callback(this[i], i)となっているが、おそらくpredicateにindex情報も渡せるような設計
             this.splice(i, 1);
         }
     }
+    return this;
+};
+
+Array.prototype.popIf = function(callback) {
+    var i = this.length;
+    const arr = [];
+    while (i--) {
+        if (callback(this[i],i)) {
+            arr.push(this.splice(i, 1)[0]);
+        }
+    }
+    return arr;
 };
