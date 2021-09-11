@@ -1,4 +1,4 @@
-// ["ID","スキル名","取得pt(コツ0)","査定値","持続時間補正値","補正値"]
+// ["ID","スキル名","取得pt","査定値","持続時間補正値","補正値"]
 //　査定効率、チムレスコア効率(レアスキルかどうかという情報が必要)、効果量効率（速度スキルのみ）
 //上位と下位でヒントレベルが違う場合があるので、効率を一括して計算することはできない
 //おそらく理想的には上位スキルの差分を計算して新規レコードとして作るべき？
@@ -18,11 +18,20 @@
 
 //TODO debug トリック後
 
-const table = [];//ロード時に作成し、これ自体はそれ以後改変しない。
+const table_data_raw = [];//ロード時に作成し、これ自体はそれ以後改変しない。
+const table_data_casched = [];//再計算の間存続する
 const promises = [];
 const sort_order = { "ID": false };//初期値はIDの降順が逆になり昇順。少し冗長
-const col_labels_data = ["ID", "スキル名", "取得pt(コツ0)", "査定値", "持続時間補正値", "補正値","スキル説明"];
-const col_labels_view = ["ID", "スキル名", "取得pt(コツ0)", "査定値","査定効率指数","チムレスコア効率指数","効果量(m)","効果量効率指数"];
+// const col_labels_data = ["ID", "スキル名", "取得pt(コツ0)", "査定値", "持続時間補正値", "補正値","スキル説明"];
+const col_labels_view = ["ID", "スキル名", "ヒントLv","取得pt", "査定値", "査定効率指数", "チムレスコア効率指数", "効果量(m)", "効果量効率指数"];
+const hint_ratio = {
+    0: 0,
+    1: 10,
+    2: 20,
+    3: 30,
+    4: 35,
+    5: 40,
+};
 
 window.onload = onLoad;
 
@@ -32,25 +41,55 @@ const filter_dom = document.getElementById("filter");
 const calcButton = document.getElementById('calcButton');
 calcButton.addEventListener('click', () => {
     sort_order["ID"] = false;
-    makeTable(table, col_labels_view,"ID");
+    makeTable(table_data_casched, col_labels_view,"ID");
 });
 const clearButton = document.getElementById('clearButton');
 clearButton.addEventListener('click', () => {
     while (table_dom.firstChild) table_dom.removeChild(table_dom.firstChild);
+    init();
 });
 const remove_negative_skill = document.getElementById('remove_negative_skill');
 const remove_unique_skill = document.getElementById('remove_unique_skill');
 const remove_inherited_skill = document.getElementById('remove_inherited_skill');
 const remove_acceleration_skill = document.getElementById('remove_acceleration_skill');
-// const checkButton = document.getElementById('');
+const modify_qualified_skill = document.getElementById('modify_qualified_skill');
 // const checkButton = document.getElementById('');
 
 function getOptions() {
     return {
         "remove_negative_skill": remove_negative_skill.checked,
         "remove_unique_skill": remove_unique_skill.checked,
-        "remove_inherited_skill":remove_inherited_skill.checked,
+        "remove_inherited_skill": remove_inherited_skill.checked,
+        "modify_qualified_skill": modify_qualified_skill.checked,
     };
+}
+
+function init() {
+    table_data_casched.forEach((record) => {
+        //Toggleのための属性を追加
+        record["選択"] = true;
+
+        //ヒントレベルを追加
+        record["ヒントLv"] = 0;
+
+        //動的な取得ポイントを初期化
+        // record["取得pt"] = record["取得pt(コツ0)"];
+        record["取得pt"] = 0;
+
+        //計算列の追加と初期化
+        //査定効率
+        const temp = record["査定値"] / record["取得pt(コツ0)"];
+        record["査定効率指数"] = round(temp, 2);//TODO ◎スキルの仕様
+    
+        //チムレスコア効率指数
+        const score = record["査定値(上位スキル単独査定)"] == "-" ? 500 : record["スキル名"].endsWith("◎") ? 500 : 1200;
+        record["チムレスコア効率指数"] = round(score / record["取得pt(コツ0)"], 2);
+    
+        //効果量と効率
+        const effectiveness = record["種類"] == "目標速度アップ" ? record["補正値"] * record["持続時間補正値"] / 10000 / 10000 : NaN;
+        record["効果量(m)"] = effectiveness;
+        record["効果量効率指数"] = round(effectiveness / record["取得pt(コツ0)"] * 10000, 2);
+    });
 }
 
 function onLoad() {
@@ -64,10 +103,10 @@ function onLoad() {
                 Object.keys(record).forEach((col) => {
                     entry[col] = record[col];
                 });
-                table.push(entry);
+                table_data_raw.push(entry);
             });
             results[1].forEach((record) => {
-                for (const row of table) {
+                for (const row of table_data_raw) {
                     if (row["ID"]==record["ID"]) {
                         Object.keys(record).forEach((col) => {
                             row[col] = record[col];
@@ -80,14 +119,28 @@ function onLoad() {
         })
         .then(() => {
             //上位スキルのPT修正
-            for (let index = 0; index < table.length; index++) {
-                const record = table[index];
+            for (let index = 0; index < table_data_raw.length; index++) {
+                const record = table_data_raw[index];
                 if (record["査定値(上位スキル単独査定)"] != "-") {
-                    record["取得pt(コツ0)"] += table[index + 1]["取得pt(コツ0)"];
+                    record["取得pt(コツ0)"] += table_data_raw[index + 1]["取得pt(コツ0)"];
                     //TODO スキル差分を作る    
                 }
             }
-            makeTable(table, col_labels_view,"ID");
+            //casched用にコピー
+            table_data_raw.forEach((record) => {
+                const row = {};
+                Object.keys(record).forEach((col) => {
+                    row[col] = record[col];
+                });
+                table_data_casched.push(row);
+            });
+
+            //キャッシュデータを初期化
+            init();
+
+            console.log(table_data_casched);
+
+            makeTable(table_data_casched, col_labels_view,"ID");
         })
         .catch(err => { console.log(err) });
 }
@@ -99,56 +152,61 @@ async function loadData(url) {
 }
 
 // 表の動的作成
-function makeTable(table_data, cols_name_to_view,sort_col) {
+function makeTable(table_data, cols_name_to_view, sort_col) {
 
     //clear
     while (table_dom.firstChild) table_dom.removeChild(table_dom.firstChild);
     
+    //ローカル変数宣言
     const options = getOptions();
     const rows = [];
     const retreived_table = [];
 
-    //必要列の抽出とつけたし
+    //TODO オプション次第でキャッシュデータを修正する
     table_data.forEach((record) => {
-        const row = {};
-        col_labels_data.forEach((key) => {
-            row[key] = record[key];
-        });
-
-        //Toggleのための属性
-        row["view"] = true;
 
         //適正補正
-        if (row["スキル説明"].includes("＞")) {
-            row["査定値"] = Math.floor(row["査定値"]*1.1);
+        if (options["modify_qualified_skill"]) {
+            record["補正査定値"] = record["スキル説明"].includes("＞")? Math.floor(record["査定値"]*1.1):record["査定値"];
         }
         
-        //計算列の追加
-        //査定効率
-        const temp = row["査定値"] / row["取得pt(コツ0)"];
-        row["査定効率指数"] = Math.round(temp * 100) / 100;//TODO ◎スキルの仕様
+        //計算列の追加。
+        // キャッシュされているので適正補正反映のため毎回再計算する必要がある。これは冗長か？
+        // どうせヒントレベルの反映もするのでokか？
 
-        //TODO 簡易的ヒントレベル実装
-        const ratio = [10, 20, 30, 35, 40];
-        for (let i = 0; i < ratio.length; i++) {
-            row["Lv" + (i + 1)] = Math.round(row["査定効率指数"] * 100 / (100 - ratio[i]) * 100) / 100;
-        }
+        //ヒントレベルで取得ptを補正
+        record["取得pt"]=record["取得pt(コツ0)"] *  (100 - hint_ratio[record["ヒントLv"]]) / 100;
+
+        //査定効率
+        const temp = record["補正査定値"] / record["取得pt"];
+        record["査定効率指数"] = Math.round(temp * 100) / 100;//TODO ◎スキルの仕様
 
         //チムレスコア効率指数
-        const score = record["査定値(上位スキル単独査定)"] == "-" ? 500 : row["スキル名"].endsWith("◎") ? 500 : 1200;
-        row["チムレスコア効率指数"] = Math.round(score / row["取得pt(コツ0)"] * 100) / 100;
+        const score = record["査定値(上位スキル単独査定)"] == "-" ? 500 : record["スキル名"].endsWith("◎") ? 500 : 1200;
+        record["チムレスコア効率指数"] = Math.round(score / record["取得pt"] * 100) / 100;
         
-        //効果量と効率
-        const effectiveness = record["種類"] == "目標速度アップ"?row["補正値"] * row["持続時間補正値"]/ 10000/10000 :NaN;
-        row["効果量(m)"] = effectiveness;
-        row["効果量効率指数"] = Math.round(effectiveness/row["取得pt(コツ0)"] * 10000) ;
-        
+        //効果量効率
+        record["効果量効率指数"] = Math.round(record["効果量(m)"]/record["取得pt"] * 10000) ;
+    });
+
+    console.log(table_data);
+
+    //キャッシュを抽出データにコピー
+    table_data.forEach((record) => {
+        const row = {};
+        Object.keys(record).forEach((col) => {
+            row[col]=record[col];
+        })
         retreived_table.push(row);
     });
 
-    console.log(retreived_table);
+    //filter
+    //選択されていないレコードの除外
+    retreived_table.removeIf((ele, index) => 
+        !ele["選択"]
+    );
 
-    //filter TODO 移動可能
+
     //マイナススキルの除外
     if (options["remove_negative_skill"]) {
         retreived_table.removeIf((elem,index) => 
@@ -161,13 +219,12 @@ function makeTable(table_data, cols_name_to_view,sort_col) {
             elem["取得pt(コツ0)"]=="固有"
         )
     }
-    //TODO 継承スキルの除外　固有スキルに800000足したID
-    // if (options["remove_inherited_skill"]) {
-    //     retreived_table.removeIf((elem, index) => {
-    //         elem["取得pt(コツ0)"]=="固有"
-    //         elem["ID"]-800000
-    //     })
-    // }
+    //継承スキルの除外
+    if (options["remove_inherited_skill"]) {
+        retreived_table.removeIf((elem, index) =>
+            elem["ID"] >= 800000
+        )
+    }
 
     //適正スキルのフィルター
     Array.from(filter_dom.children).removeIf((child) => 
@@ -181,26 +238,71 @@ function makeTable(table_data, cols_name_to_view,sort_col) {
     //並べ替え
     sortOnCol(retreived_table, sort_col, true);
     
-    //DOMへの反映
-    // TODO　内部的な値と実際に表示する値を別にすることは可能か
+    console.log(retreived_table);
 
+    //DOMへの反映
     //header
     rows.push(table_dom.insertRow(-1));
+
+    //選択列
+    const toggle_all_checked = rows[0].insertCell(-1);
+    const input_dom = document.createElement("input");
+    input_dom.type = "checkbox";
+    input_dom.checked = true;
+    input_dom.addEventListener("click",(e) => {
+        //キャッシュデータを更新してチェックボックスDOMも更新する
+        //ただしテーブルを作り直すとdeselect allされたとき全ての項目が消されてしまうことになる
+        //よって、見かけと内部データは書き換えるが、テーブルの更新自体は行わない必要がある
+        const is_checked = e.path[0].checked;
+        console.log(is_checked);
+        console.log(e.path);
+        console.log(e.path[3].children);
+        console.log(e.path[3].children[1].firstChild);
+        console.log(e.path[3].children[1].firstChild.firstChild.checked);
+        Array.from(e.path[3].children).forEach((record_dom) => {
+            record_dom.firstChild.firstChild.checked = is_checked;
+
+            table_data_casched
+        });
+
+
+
+        console.log(table_data_casched);
+
+    });
+    toggle_all_checked.appendChild(input_dom);
+
+    //選択列以外のソート可能列
     cols_name_to_view.forEach((col_label) => { //TODO index0の行が欠けていた場合バグ
         const cell = rows[0].insertCell(-1);
         cell.appendChild(document.createTextNode(col_label));
         cell.style.backgroundColor = "#bbb";
         cell.addEventListener("click", (e) => {
-            // console.log(e.path[0].innerText);
-            makeTable(table, cols_name_to_view,e.path[0].innerText);
+            makeTable(table_data_casched, cols_name_to_view,e.path[0].innerText);
         });
     });
 
+    //headerから下
     for(i = 0; i < retreived_table.length; i++){
         rows.push(table_dom.insertRow(-1));  // 行の追加。追加した行に対して列を追加できるようにrows配列いれておく
 
-        //前2列
-        // const cell = rows[i+1].insertCell(-1);
+        //選択列
+        const select_cell = rows[i + 1].insertCell(-1);
+        const input_dom = document.createElement("input");
+        input_dom.type = "checkbox";
+        input_dom.checked = retreived_table[i]["選択"];
+        input_dom.addEventListener("click",(e) => {
+            //クリックしたスキルのIDを取得
+            const id = e.path[2].children[1].innerText;
+            // console.log(e.path[0].checked);
+            const is_checked = e.path[0].checked;
+            // キャッシュされたスキルテーブルにIDでアクセスして更新
+            //単純なtoggle構造にできないのはこの操作以外のルートでDOMが更新される可能性があるから。
+            //見かけと内部データが必ず一致するようにしてある
+            const clicked_record = table_data_casched.find(ele => ele["ID"] == id);
+            clicked_record["選択"] = is_checked;
+        });
+        select_cell.appendChild(input_dom);
 
         cols_name_to_view.forEach((key) => {
             const cell = rows[i+1].insertCell(-1);//rowsにはヘッダー行が入っているため+1から
@@ -212,11 +314,12 @@ function makeTable(table_data, cols_name_to_view,sort_col) {
 
 function sortOnCol(table, sort_col, include_NaN) {//数字しかソートできない
 
-    if (!sort_col in sort_order) {//keyがまだ存在しなかったら
+    if (!(sort_col in sort_order)) {//keyがまだ存在しなかったら
         sort_order[sort_col] = false;
     } else {
         sort_order[sort_col] = !sort_order[sort_col];
     }
+    console.log(sort_order[sort_col]);
 
     const temp = table.popIf(x => Number.isNaN(x[sort_col]));
     table.sort((a, b) => sort_order[sort_col] ? a[sort_col] - b[sort_col] : b[sort_col] - a[sort_col]);
@@ -245,3 +348,8 @@ Array.prototype.popIf = function(callback) {
     }
     return arr;
 };
+
+function round(num, digit) {
+    const exp = Math.pow(10, digit);
+    return Math.round(num * exp) / exp;
+}
