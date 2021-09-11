@@ -192,19 +192,17 @@ function makeTable(table_data, cols_name_to_view, sort_col) {
     console.log(table_data);
 
     //キャッシュを抽出データにコピー
+    //TODO 抽出されたレコードへの変更がキャッシュにも反映されるようにしたほうがよいか？
     table_data.forEach((record) => {
-        const row = {};
-        Object.keys(record).forEach((col) => {
-            row[col]=record[col];
-        })
-        retreived_table.push(row);
+        retreived_table.push(record);
     });
 
     //filter
-    //選択されていないレコードの除外
-    retreived_table.removeIf((ele, index) => 
-        !ele["選択"]
-    );
+    //TODO 選択されていないレコードの除外
+    // 除外せず並び替えの時に下に行くだけの仕様の方がいいかもしれない
+    // retreived_table.removeIf((ele, index) => 
+    //     !ele["選択"]
+    // );
 
 
     //マイナススキルの除外
@@ -236,7 +234,7 @@ function makeTable(table_data, cols_name_to_view, sort_col) {
     });
 
     //並べ替え
-    sortOnCol(retreived_table, sort_col, true);
+    sortOnCol(retreived_table, sort_col, true, true);
     
     console.log(retreived_table);
 
@@ -259,15 +257,17 @@ function makeTable(table_data, cols_name_to_view, sort_col) {
         console.log(e.path[3].children);
         console.log(e.path[3].children[1].firstChild);
         console.log(e.path[3].children[1].firstChild.firstChild.checked);
+        //DOMへの反映
         Array.from(e.path[3].children).forEach((record_dom) => {
             record_dom.firstChild.firstChild.checked = is_checked;
-
-            table_data_casched
+        });
+        //内部データへの反映。キャッシュ、抽出は同じ参照
+        retreived_table.forEach((record) => {
+            record["選択"] = is_checked;
         });
 
-
-
         console.log(table_data_casched);
+        console.log(retreived_table);
 
     });
     toggle_all_checked.appendChild(input_dom);
@@ -312,20 +312,34 @@ function makeTable(table_data, cols_name_to_view, sort_col) {
     }
 }
 
-function sortOnCol(table, sort_col, include_NaN) {//数字しかソートできない
-
+function sortOnCol(table, sort_col, include_NaN, include_unselected) {//数字しかソートできない
+    
+    
     if (!(sort_col in sort_order)) {//keyがまだ存在しなかったら
         sort_order[sort_col] = false;
     } else {
         sort_order[sort_col] = !sort_order[sort_col];
     }
-    console.log(sort_order[sort_col]);
-
-    const temp = table.popIf(x => Number.isNaN(x[sort_col]));
+    // console.log(sort_order[sort_col]);
+    
+    //NaNを一時退避
+    const nan_records = table.popIf(x => Number.isNaN(x[sort_col]));
+    //選択されていないレコードを一時退避
+    const unselected_records = table.popIf(x => !x["選択"]);
+    
+    //ソート
     table.sort((a, b) => sort_order[sort_col] ? a[sort_col] - b[sort_col] : b[sort_col] - a[sort_col]);
-    if (include_NaN) {
-        Array.prototype.push.apply(table, temp);
+    //選択されていないものもソート
+    unselected_records.sort((a, b) => sort_order[sort_col] ? a[sort_col] - b[sort_col] : b[sort_col] - a[sort_col]);
+
+    //退避していたものを後ろにつなげる
+    if (include_unselected) {
+        Array.prototype.push.apply(table, unselected_records);
     }
+    if (include_NaN) {
+        Array.prototype.push.apply(table, nan_records);
+    }
+
 }
 
 Array.prototype.removeIf = function(callback) {
