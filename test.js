@@ -8,12 +8,21 @@
 //オプション　脚質距離補正を含めるかどうか。ヒントレベル。よく使うスキル。サポカから入手できるスキル。
 // 表示する列の選択。スキル差分を作るかどうか。ソート方法。
 // レコードに表示するかどうか、ヒントレベルの切り替えという項目を作る
+//レコードとデータのデータバインディング
+
+// ロードされたときjsonファイルからデータを取得し、合成したデータを作る。これを不変にする: table_data_raw
+// ↓
+// そこからキャッシュされたデータを作る。このデータは可変で、再計算の間中常に存続する: table_data_casched
+// ↓
+// キャッシュされたデータから表示させるため用のデータを抽出し、これをDOMに反映する: table_data_retreived
 
 //TODO debug トリック後
 
 const table = [];//ロード時に作成し、これ自体はそれ以後改変しない。
 const promises = [];
-const sort_order = {"ID":false};//初期値はIDの降順が逆になり昇順。少し冗長
+const sort_order = { "ID": false };//初期値はIDの降順が逆になり昇順。少し冗長
+const col_labels_data = ["ID", "スキル名", "取得pt(コツ0)", "査定値", "持続時間補正値", "補正値","スキル説明"];
+const col_labels_view = ["ID", "スキル名", "取得pt(コツ0)", "査定値","査定効率指数","チムレスコア効率指数","効果量(m)","効果量効率指数"];
 
 window.onload = onLoad;
 
@@ -23,7 +32,7 @@ const filter_dom = document.getElementById("filter");
 const calcButton = document.getElementById('calcButton');
 calcButton.addEventListener('click', () => {
     sort_order["ID"] = false;
-    makeTable(table, ["ID","スキル名","取得pt(コツ0)","査定値","持続時間補正値","補正値"],"ID");
+    makeTable(table, col_labels_view,"ID");
 });
 const clearButton = document.getElementById('clearButton');
 clearButton.addEventListener('click', () => {
@@ -63,6 +72,7 @@ function onLoad() {
                         Object.keys(record).forEach((col) => {
                             row[col] = record[col];
                         });
+                        // IDかぶりのスキルがあるためbreakできない：嫁マヤ
                         // break;
                     }
                 }
@@ -77,7 +87,7 @@ function onLoad() {
                     //TODO スキル差分を作る    
                 }
             }
-            makeTable(table, ["ID","スキル名","取得pt(コツ0)","査定値","持続時間補正値","補正値"],"ID");
+            makeTable(table, col_labels_view,"ID");
         })
         .catch(err => { console.log(err) });
 }
@@ -89,10 +99,10 @@ async function loadData(url) {
 }
 
 // 表の動的作成
-function makeTable(table_data, cols_name,sort_col) {
+function makeTable(table_data, cols_name_to_view,sort_col) {
 
     //clear
-    while (table_dom.firstChild) table_dom.removeChild(table_dom.firstChild)
+    while (table_dom.firstChild) table_dom.removeChild(table_dom.firstChild);
     
     const options = getOptions();
     const rows = [];
@@ -101,13 +111,13 @@ function makeTable(table_data, cols_name,sort_col) {
     //必要列の抽出とつけたし
     table_data.forEach((record) => {
         const row = {};
-        cols_name.forEach((key) => {
+        col_labels_data.forEach((key) => {
             row[key] = record[key];
         });
 
-        
-        row["スキル説明"] = record["スキル説明"];
- 
+        //Toggleのための属性
+        row["view"] = true;
+
         //適正補正
         if (row["スキル説明"].includes("＞")) {
             row["査定値"] = Math.floor(row["査定値"]*1.1);
@@ -176,13 +186,13 @@ function makeTable(table_data, cols_name,sort_col) {
 
     //header
     rows.push(table_dom.insertRow(-1));
-    Object.keys(retreived_table[0]).forEach((col_label) => { //TODO index0の行が欠けていた場合バグ
+    cols_name_to_view.forEach((col_label) => { //TODO index0の行が欠けていた場合バグ
         const cell = rows[0].insertCell(-1);
         cell.appendChild(document.createTextNode(col_label));
         cell.style.backgroundColor = "#bbb";
         cell.addEventListener("click", (e) => {
             // console.log(e.path[0].innerText);
-            makeTable(table, ["ID","スキル名","取得pt(コツ0)","査定値","持続時間補正値","補正値"],e.path[0].innerText);
+            makeTable(table, cols_name_to_view,e.path[0].innerText);
         });
     });
 
@@ -192,8 +202,7 @@ function makeTable(table_data, cols_name,sort_col) {
         //前2列
         // const cell = rows[i+1].insertCell(-1);
 
-
-        Object.keys(retreived_table[i]).forEach((key) => {
+        cols_name_to_view.forEach((key) => {
             const cell = rows[i+1].insertCell(-1);//rowsにはヘッダー行が入っているため+1から
             cell.appendChild(document.createTextNode(retreived_table[i][key]));
             cell.style.backgroundColor = "#ddd"; // ヘッダ行以外
